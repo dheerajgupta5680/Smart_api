@@ -6,10 +6,11 @@ class UserSerializer(serializers.ModelSerializer):
     apiKey = serializers.CharField(required=True)
     pin = serializers.CharField(write_only=True, required=True)
     clientID = serializers.CharField(required=True)
+    token = serializers.CharField(required=True)
 
     class Meta:
         model = CustomUser
-        fields = ('username', 'email', 'password', 'clientID', 'apiKey', 'pin')
+        fields = ('username', 'email', 'password', 'clientID', 'apiKey', 'pin', 'token')
         
     def create(self, validated_data):
         user = CustomUser(
@@ -17,7 +18,8 @@ class UserSerializer(serializers.ModelSerializer):
             email = validated_data['email'],
             clientID = validated_data['clientID'],
             apiKey = validated_data['apiKey'],
-            pin = validated_data['pin']
+            pin = validated_data['pin'],
+            token = validated_data['token']
         )
         user.set_password(validated_data['password'])  # Hashes the password
         user.save()

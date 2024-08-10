@@ -7,6 +7,10 @@ from rest_framework.authentication import TokenAuthentication
 from rest_framework.authtoken.models import Token
 from django.contrib.auth import authenticate
 from .serializers import UserSerializer
+from django.http import JsonResponse
+from SmartApi import SmartConnect
+from logzero import logger
+import pyotp
 
 class UserRegistrationView(generics.CreateAPIView):
     serializer_class = UserSerializer
@@ -30,3 +34,28 @@ class LogoutAPIView(APIView):
         request.user.auth_token.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
     
+class GenerateSessionView(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        user = request.user
+        api_key = user.api_key
+        username = user.client_code
+        pwd = user.pin
+        token = user.totp_token
+        
+        try:
+            totp = pyotp.TOTP(token).now()
+        except Exception as e:
+            logger.error("Invalid Token: The provided token is not valid.")
+            return JsonResponse({'error': 'Invalid TOTP Token'}, status=400)
+        
+        smartApi = SmartConnect(api_key=api_key)
+        data = smartApi.generateSession(username, pwd, totp)
+        
+        if not data['status']:
+            logger.error(data)
+            return JsonResponse({'error': 'Failed to create session', 'details': data}, status=400)
+
+        return JsonResponse({'message': 'Session created successfully', 'data': data}, status=200)
+        

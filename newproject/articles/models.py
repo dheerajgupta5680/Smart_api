@@ -7,4 +7,5 @@ class CustomUser(AbstractUser):
     client_id = models.CharField(max_length=255, null=False, blank=False)
     apiKey = models.CharField(max_length=255, null=False, blank=False)
     pin = encrypt(models.CharField(max_length=255, null=False, blank=False))  # Encrypt TOTP as it's sensitive
+    token = encrypt(models.CharField(max_length=255, null=False, blank=False))
     
