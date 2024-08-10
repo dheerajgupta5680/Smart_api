@@ -5,6 +5,6 @@ from django_cryptography.fields import encrypt
 class CustomUser(AbstractUser):
     # Your custom fields here
     client_id = models.CharField(max_length=255, null=False, blank=False)
-    totp = encrypt(models.CharField(max_length=255, null=False, blank=False))  # Encrypt TOTP as it's sensitive
+    apiKey = models.CharField(max_length=255, null=False, blank=False)
     pin = encrypt(models.CharField(max_length=255, null=False, blank=False))  # Encrypt TOTP as it's sensitive
     
