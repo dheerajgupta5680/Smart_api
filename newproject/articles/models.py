@@ -9,6 +9,8 @@ class CustomUser(AbstractUser):
     apiKey = models.CharField(max_length=255, null=False, blank=False)
     pin = encrypt(models.CharField(max_length=255, null=False, blank=False))  # Encrypt TOTP as it's sensitive
     token = encrypt(models.CharField(max_length=255, null=False, blank=False))
+    feedToken = models.CharField(max_length=255)
+    jwtToken = models.CharField(max_length=255)
 
 class OrderRecord(models.Model):
     tradingsymbol = models.CharField(max_length=20)

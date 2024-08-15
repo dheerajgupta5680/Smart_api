@@ -16,6 +16,8 @@ from logzero import logger
 import pandas as pd
 import pyotp
 import time
+import threading
+from .angel_websocket import start_angelone_websocket
 
 
 class UserRegistrationView(generics.CreateAPIView):
@@ -44,11 +46,13 @@ class GenerateSessionView(APIView):
     permission_classes = [IsAuthenticated]
     
     def post(self, request):
+        global smartApi
+        
         user = request.user
-        api_key = user.api_key
-        username = user.client_code
+        api_key = user.apiKey
+        username = user.clientID
         pwd = user.pin
-        token = user.totp_token
+        token = user.token
         
         try:
             totp = pyotp.TOTP(token).now()
@@ -56,13 +60,16 @@ class GenerateSessionView(APIView):
             logger.error("Invalid Token: The provided token is not valid.")
             return JsonResponse({'error': 'Invalid TOTP Token'}, status=400)
         
-        GenerateSessionView.smartApi = SmartConnect(api_key=api_key)
-        data = GenerateSessionView.smartApi.generateSession(username, pwd, totp)
-        
+        smartApi = SmartConnect(api_key=api_key)
+        data = smartApi.generateSession(username, pwd, totp)
         if not data['status']:
             logger.error(data)
-            return JsonResponse({'error': 'Failed to create session', 'details': data}, status=400)
-
+            return JsonResponse({'error': 'Failed to create session', 'details': data}, status=400) 
+        jwt_token = data['data']['jwtToken']
+        feed_token = smartApi.getfeedToken()
+        user.jwtToken = jwt_token
+        user.feedToken = feed_token
+        user.save()
         return JsonResponse({'message': 'Session created successfully', 'data': data}, status=200)
         
 class ScripTokenView(APIView):
@@ -70,23 +77,26 @@ class ScripTokenView(APIView):
 
     def post(self, request):
         serializer = ScripTokenSerializer(data=request.data)
-        
+        #api_key = request.user.apiKey
         if serializer.is_valid():
-            
+            #smartApi = SmartConnect(api_key=api_key)
             exchange = serializer.validated_data['exchange']
             symbol = serializer.validated_data['symbol']
             type_suffix = serializer.validated_data['type']
             
             try:
-                token_data = GenerateSessionView.smartApi.searchScrip(exchange, symbol)
+                token_data = smartApi.searchScrip(exchange, symbol)
                 if not token_data or 'status' in token_data and not token_data['status']:
                     return JsonResponse({'error': 'Failed to retrieve token', 'details': token_data}, status=400)
                 
                 # Filter the data based on type_suffix if provided
-                filtered_data = [
-                    item for item in token_data['data']
-                    if item['tradingsymbol'].endswith(type_suffix)
-                ]
+                if exchange.upper() == 'NSE':
+                    filtered_data = [
+                        item for item in token_data['data']
+                        if item['tradingsymbol'].endswith(type_suffix)
+                    ]
+                else:
+                    filtered_data = token_data['data']
 
                 if not filtered_data:
                     return JsonResponse({'error': 'No matching symbol found'}, status=404)
@@ -112,7 +122,7 @@ class PlaceOrder(APIView):
         if serializer.is_valid():
             order_details = serializer.validated_data
             try:
-                order_id = GenerateSessionView.smartApi.placeOrder(order_details)
+                order_id = smartApi.placeOrder(order_details)
                 if order_id.get('status') == True:
                     # Save order details along with response data to the database
                     OrderRecord.objects.create(
@@ -131,18 +141,24 @@ class PlaceOrder(APIView):
         return Response(serializer.errors, status=400)
     
 class GetPrice(APIView):
-    permissions = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]  # Corrected attribute name
     
-    def get(self, request):
+    def post(self, request):
+   
         serializer = GetPriceSerializer(data=request.data)
         if serializer.is_valid():
-            price_order = serializer.validated_data
+            exchange = serializer.validated_data['exchange']
+            tradingsymbol = serializer.validated_data['symbol']
+            symboltoken = serializer.validated_data['symboltoken']
             try:
-                price_data = GenerateSessionView.smartApi.ltpData(price_order)
+                price_data = smartApi.ltpData(exchange, tradingsymbol, symboltoken)
                 price = price_data['data']['ltp']
-                return Response({"message": "Price fetched succesfully", "price": price}, status=200)
+                return Response({"message": "Price fetched successfully", "price": price}, status=200)
             except Exception as e:
-                return Response({"error": str(e)}, status=400)        
+                return Response({"error": str(e)}, status=400)
+        else:
+            # Return an error response if the serializer is not valid
+            return Response(serializer.errors, status=400)        
             
 class EmergencySellAPIView(APIView):
     permission_classes = [IsAuthenticated]
@@ -150,7 +166,7 @@ class EmergencySellAPIView(APIView):
     def post(self, request):
         # Get all holdings from the smart API
         try:
-            holdings_data = GenerateSessionView.smartApi.allholding()
+            holdings_data = smartApi.allholding()
             holdings = holdings_data.get('data', {}).get('holdings', [])
         except Exception as e:
             logger.error(f"Failed to fetch holdings: {str(e)}")
@@ -176,7 +192,7 @@ class EmergencySellAPIView(APIView):
             }
             try:
                 # Place the sell order
-                order_response = GenerateSessionView.smartApi.placeOrder(order)
+                order_response = smartApi.placeOrder(order)
                 orders_sent.append(order_response)
                 time.sleep(0.1)  # Throttle orders to 10 per second
             except Exception as e:
@@ -220,3 +236,23 @@ class ExportExcelAPIView(APIView):
             df.to_excel(writer, index=False, sheet_name='Orders')
 
         return response
+
+class create_alert(APIView):
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        serializer = AlertSerializer(data=request.data)
+        if serializer.is_valid():
+            user = request.user
+            apiKey = user.apiKey
+            
+            
+            token = serializer.validated_data['token']
+            target_price = serializer.validated_data['targetprice']
+            alert_details = {'token': token, 'target_price': target_price}
+
+            # Start the AngelOne WebSocket in a new thread
+            thread = threading.Thread(target=start_angelone_websocket, args=(alert_details,))
+            thread.start()
+
+            return JsonResponse({'status': 'Alert created and tracking started'})

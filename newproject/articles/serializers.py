@@ -32,7 +32,7 @@ class OrderSerializer(serializers.Serializer):
     transactiontype = serializers.ChoiceField(choices=['BUY', 'SELL'])
     ordertype = serializers.ChoiceField(choices=['MARKET', 'LIMIT', 'SL', 'SL-M'])
     quantity = serializers.IntegerField(min_value=1)
-    producttype = serializers.ChoiceField(choices=['CNC', 'MIS', 'ROBO'])
+    producttype = serializers.ChoiceField(choices=['DELIVERY', 'CARRYFORWARD', 'MARGIN', 'INTRADAY', 'BO'])
     price = serializers.FloatField(required=False)
     triggerprice = serializers.FloatField(required=False)
     squareoff = serializers.FloatField(required=False)
@@ -65,3 +65,7 @@ class GetPriceSerializer(serializers.Serializer):
 class DateRangeSerializer(serializers.Serializer):
     start_date = serializers.DateField(required=True)
     end_date = serializers.DateField(required=True)
+    
+class AlertSerializer(serializers.Serializer):
+    token = serializers.CharField(required=True)
+    targetprice = serializers.FloatField(required=True)
